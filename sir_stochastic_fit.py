@@ -3,7 +3,7 @@ stochastic version of the SIR model
 
 the model is fitted to real data, using a monte carlo technique.
 starting from prior distributions of model parameters, a large number of model runs is made using monte-carlo sampling.
-each run is compared to the data, and weighted according to its fit to the data.
+each run is compared to the data, and weighted according to its fit to the data (with either L1 or L2 error).
 With this, posterior distributions of the model parameters are computed. This is done with forming a pool
 of possible parameter values (the ones used in the monte-carlo sampling), and then randomly drawing from them,
 but with non-uniform probablities. the probabiliyt of chosing the parameters P from run X is p=1/e*norm, where "e" is the
@@ -11,10 +11,9 @@ L1-error of the fit of model X, and norm a factor so that the probability summed
 with the posterior distributions again monte carlo sampling is done, and man simulations are made. These simulations
 are then the probabilistic prediction.
 
+TODO: right there is a bug when date_start is not fixed (the percentiels and the plots are wrong)
 
 """
-
-
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.integrate import odeint
@@ -23,6 +22,7 @@ import datetime
 import pandas as pd
 import seaborn as sns
 from tqdm import trange, tqdm
+
 
 reference_date = pd.to_datetime('20200101') # this reference date is only for the definition of the
 # date in the model. it is NOT the start date of the model. in the model we use integers as dates, which descrive
@@ -47,7 +47,7 @@ priors = dict(
     tau = stats.norm(loc=14, scale=1).rvs,
     d=lambda n: np.abs(stats.norm(loc=0.01, scale=0.01).rvs(n)),  # death rate (% infected who die)
     # the date the pandemic starts. uniform discrete distribution. unit: day relative to reference date
-    date_start = lambda n: np.random.randint(30,80, size=n) # upper limit must be lower than the lower limit of obs
+    date_start = lambda n: np.random.randint(50,80, size=n) # upper limit must be lower than the lower limit of obs
 )
 
 # sanity check
@@ -61,6 +61,7 @@ linestyle_percs = [':','--','-.','-','-.','--',':']
 N_mc_fit = 10000 #  number of sims that are tested on the data
 N_mc_post = 10000 # number of sims made from posterior distribution
 target_var = 'D'  # which data to fit on. 'D' for deaths, 'I' for infected
+error = 'L2'  # L1 | L2
 
 country = 'AUT'
 plot_single_sims = False
@@ -141,9 +142,14 @@ def evaluate_model(data_model, data_obs):
         # in this case we have to fill up model data with zeros
         n_append = len(data_obs) - len(data_model_sub)
         data_model = np.concatenate ([np.zeros(n_append), data_model_sub.values])
+
     assert(data_model.shape == data_obs.shape)
-    # l1 error
-    return np.mean(np.abs(data_model - data_obs.values))
+    if error == 'L1':
+       return np.mean(np.abs(data_model - data_obs.values))
+    elif error == 'L2':
+        return np.mean((data_model - data_obs.values)**2)
+    else:
+        raise ValueError(f'error {error} not implemented!')
 
 
 def evaluate_single_run(params):
@@ -183,6 +189,7 @@ def fit(fixed_params, priors, N_mc_fit):
     weights = weights / np.sum(weights)
     record_params['weights'] = weights
     return record_params #, record_modelrun
+
 
 
 def sample_from_posteriors(record_params, n):
@@ -342,3 +349,4 @@ plt.tight_layout()
 plt.savefig(f'{country}_modelfit_total.svg')
 ax.semilogy()
 plt.savefig(f'{country}_modelfit_total_logy.svg')
+
